@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import threading
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox
+from typing import Any
 
 import customtkinter as ctk
 
@@ -25,14 +28,38 @@ class MainWindow(ctk.CTk):
         self.resize_section_visible = False
         self.numeric_validation = (self.register(self._validate_numeric_input), "%P")
 
+        self.export_records_by_file: dict[str, dict[str, Any]] = {}
+        self.export_file_buttons: list[ctk.CTkButton] = []
+
         self._build_ui()
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(4, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
-        controls = ctk.CTkFrame(self)
-        controls.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 10))
+        self.tabs = ctk.CTkTabview(self)
+        self.tabs.grid(row=0, column=0, sticky="nsew", padx=18, pady=(18, 10))
+
+        self.converter_tab = self.tabs.add("Converter")
+        self.export_manager_tab = self.tabs.add("Export Manager")
+
+        self._build_converter_tab(self.converter_tab)
+        self._build_export_manager_tab(self.export_manager_tab)
+
+        footer = ctk.CTkFrame(self)
+        footer.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 18))
+        footer.grid_columnconfigure(0, weight=1)
+
+        self.credit_label = ctk.CTkLabel(footer, text="Made by Caio Abrahão", cursor="hand2")
+        self.credit_label.grid(row=0, column=0, sticky="e", padx=10, pady=8)
+        self.credit_label.bind("<Button-1>", self._open_credit_link)
+
+    def _build_converter_tab(self, parent: ctk.CTkFrame) -> None:
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(4, weight=1)
+
+        controls = ctk.CTkFrame(parent)
+        controls.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 10))
         controls.grid_columnconfigure((0, 1), weight=1)
 
         self.select_files_button = ctk.CTkButton(controls, text="Select Images", command=self._pick_files)
@@ -41,8 +68,8 @@ class MainWindow(ctk.CTk):
         self.select_output_button = ctk.CTkButton(controls, text="Select Output Folder", command=self._pick_output_dir)
         self.select_output_button.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
 
-        options = ctk.CTkFrame(self)
-        options.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 10))
+        options = ctk.CTkFrame(parent)
+        options.grid(row=1, column=0, sticky="ew", padx=0, pady=(0, 10))
         options.grid_columnconfigure((0, 1), weight=1)
 
         self.files_label = ctk.CTkLabel(options, text="No images selected")
@@ -127,8 +154,8 @@ class MainWindow(ctk.CTk):
 
         self._update_resize_field_state()
 
-        selected_frame = ctk.CTkFrame(self)
-        selected_frame.grid(row=2, column=0, sticky="nsew", padx=18, pady=(0, 10))
+        selected_frame = ctk.CTkFrame(parent)
+        selected_frame.grid(row=2, column=0, sticky="nsew", padx=0, pady=(0, 10))
         selected_frame.grid_columnconfigure(0, weight=1)
         selected_frame.grid_rowconfigure(1, weight=1)
 
@@ -137,8 +164,8 @@ class MainWindow(ctk.CTk):
         self.selected_images_text.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
         self.selected_images_text.configure(state="disabled")
 
-        progress_frame = ctk.CTkFrame(self)
-        progress_frame.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 10))
+        progress_frame = ctk.CTkFrame(parent)
+        progress_frame.grid(row=3, column=0, sticky="ew", padx=0, pady=(0, 10))
         progress_frame.grid_columnconfigure(0, weight=1)
 
         self.progress_label = ctk.CTkLabel(progress_frame, text="Progress: 0/0")
@@ -148,8 +175,8 @@ class MainWindow(ctk.CTk):
         self.progress_bar.set(0)
         self.progress_bar.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
 
-        logs_frame = ctk.CTkFrame(self)
-        logs_frame.grid(row=4, column=0, sticky="nsew", padx=18, pady=(0, 10))
+        logs_frame = ctk.CTkFrame(parent)
+        logs_frame.grid(row=4, column=0, sticky="nsew", padx=0, pady=(0, 10))
         logs_frame.grid_rowconfigure(1, weight=1)
         logs_frame.grid_columnconfigure(0, weight=1)
 
@@ -158,15 +185,57 @@ class MainWindow(ctk.CTk):
         self.logs_text = ctk.CTkTextbox(logs_frame)
         self.logs_text.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
 
-        footer = ctk.CTkFrame(self)
-        footer.grid(row=5, column=0, sticky="ew", padx=18, pady=(0, 18))
-        footer.grid_columnconfigure(0, weight=1)
+        actions = ctk.CTkFrame(parent)
+        actions.grid(row=5, column=0, sticky="ew", padx=0, pady=(0, 0))
+        actions.grid_columnconfigure(0, weight=1)
 
-        self.start_button = ctk.CTkButton(footer, text="Start Batch Conversion", command=self._start_conversion)
+        self.start_button = ctk.CTkButton(actions, text="Start Batch Conversion", command=self._start_conversion)
         self.start_button.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
 
-        self.credit_label = ctk.CTkLabel(footer, text="Made by Caio Abrahão")
-        self.credit_label.grid(row=1, column=0, sticky="e", padx=10, pady=(0, 8))
+    def _build_export_manager_tab(self, parent: ctk.CTkFrame) -> None:
+        parent.grid_columnconfigure((0, 1), weight=1)
+        parent.grid_rowconfigure(2, weight=1)
+
+        controls = ctk.CTkFrame(parent)
+        controls.grid(row=0, column=0, columnspan=2, sticky="ew", padx=0, pady=(0, 10))
+        controls.grid_columnconfigure(0, weight=1)
+
+        self.manager_output_label = ctk.CTkLabel(controls, text="Exported directory: not selected")
+        self.manager_output_label.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 8))
+
+        buttons = ctk.CTkFrame(controls)
+        buttons.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 10))
+        buttons.grid_columnconfigure((0, 1), weight=1)
+
+        self.manager_select_output_button = ctk.CTkButton(buttons, text="Select Output Folder", command=self._pick_output_dir)
+        self.manager_select_output_button.grid(row=0, column=0, padx=(0, 6), pady=0, sticky="ew")
+
+        self.manager_refresh_button = ctk.CTkButton(buttons, text="Refresh Exported Data", command=self._refresh_export_manager)
+        self.manager_refresh_button.grid(row=0, column=1, padx=(6, 0), pady=0, sticky="ew")
+
+        self.manager_status_label = ctk.CTkLabel(controls, text="")
+        self.manager_status_label.grid(row=2, column=0, sticky="w", padx=12, pady=(0, 10))
+
+        files_frame = ctk.CTkFrame(parent)
+        files_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 5), pady=(0, 10))
+        files_frame.grid_columnconfigure(0, weight=1)
+        files_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(files_frame, text="Exported images").grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
+        self.export_files_scroll = ctk.CTkScrollableFrame(files_frame)
+        self.export_files_scroll.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self.export_files_scroll.grid_columnconfigure(0, weight=1)
+
+        details_frame = ctk.CTkFrame(parent)
+        details_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 0), pady=(0, 10))
+        details_frame.grid_columnconfigure(0, weight=1)
+        details_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(details_frame, text="JSON object").grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
+        self.export_json_text = ctk.CTkTextbox(details_frame)
+        self.export_json_text.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+
+        self._set_export_json_text("Select an output folder to inspect exported data.")
 
     def _pick_files(self) -> None:
         selected = filedialog.askopenfilenames(
@@ -199,6 +268,7 @@ class MainWindow(ctk.CTk):
 
         self.output_dir = Path(selected)
         self._refresh_output_label()
+        self._refresh_export_manager()
         self._log(f"Output folder set to: {self.output_dir}")
 
     def _on_quality_change(self, value: float) -> None:
@@ -281,6 +351,7 @@ class MainWindow(ctk.CTk):
                 f"JSON: {result.gallery_json_path.name}"
             )
             self._log(summary)
+            self._refresh_export_manager()
             messagebox.showinfo("Batch finished", summary)
 
         self.after(0, finish)
@@ -399,3 +470,97 @@ class MainWindow(ctk.CTk):
             unit_index += 1
 
         return f"{value:.2f} {units[unit_index]}"
+
+    def _open_credit_link(self, _event: object) -> None:
+        webbrowser.open("https://github.com/caioabrahao")
+
+    def _refresh_export_manager(self) -> None:
+        if self.output_dir is None:
+            self.manager_output_label.configure(text="Exported directory: not selected")
+            self.manager_status_label.configure(text="Select an output folder to load exported files.")
+            self._clear_export_file_buttons()
+            self._set_export_json_text("Select an output folder to inspect exported data.")
+            return
+
+        exported_dir = resolve_effective_output_dir(self.output_dir)
+        self.manager_output_label.configure(text=f"Exported directory: {exported_dir}")
+
+        if not exported_dir.exists():
+            self.manager_status_label.configure(text="Exported folder does not exist yet.")
+            self._clear_export_file_buttons()
+            self._set_export_json_text("No exported files found yet.")
+            return
+
+        records = self._load_gallery_records(exported_dir)
+        image_files = sorted(
+            [
+                path.name
+                for path in exported_dir.iterdir()
+                if path.is_file() and path.suffix.lower() in {".webp", ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+            ]
+        )
+
+        self._clear_export_file_buttons()
+        for image_name in image_files:
+            button = ctk.CTkButton(
+                self.export_files_scroll,
+                text=image_name,
+                anchor="w",
+                command=lambda name=image_name: self._show_export_record(name),
+            )
+            button.grid(sticky="ew", padx=0, pady=(0, 6))
+            self.export_file_buttons.append(button)
+
+        if not image_files:
+            self.manager_status_label.configure(text="No exported images found.")
+            self._set_export_json_text("No exported images found in the exported directory.")
+            return
+
+        self.manager_status_label.configure(text=f"Loaded {len(image_files)} image(s) and {len(records)} JSON record(s).")
+        self._show_export_record(image_files[0])
+
+    def _load_gallery_records(self, exported_dir: Path) -> dict[str, dict[str, Any]]:
+        gallery_path = exported_dir / "gallery-data.json"
+        self.export_records_by_file = {}
+
+        if not gallery_path.exists():
+            return self.export_records_by_file
+
+        try:
+            with gallery_path.open("r", encoding="utf-8") as stream:
+                payload = json.load(stream)
+        except (json.JSONDecodeError, OSError):
+            self.manager_status_label.configure(text="Could not read gallery-data.json (invalid or inaccessible).")
+            return self.export_records_by_file
+
+        if not isinstance(payload, list):
+            self.manager_status_label.configure(text="gallery-data.json format is invalid.")
+            return self.export_records_by_file
+
+        for item in payload:
+            if isinstance(item, dict) and isinstance(item.get("output_file"), str):
+                self.export_records_by_file[item["output_file"]] = item
+
+        return self.export_records_by_file
+
+    def _show_export_record(self, image_name: str) -> None:
+        record = self.export_records_by_file.get(image_name)
+        if record is None:
+            payload = {
+                "output_file": image_name,
+                "message": "No matching object found in gallery-data.json",
+            }
+        else:
+            payload = record
+
+        pretty = json.dumps(payload, indent=2, ensure_ascii=False)
+        self._set_export_json_text(pretty)
+
+    def _set_export_json_text(self, content: str) -> None:
+        self.export_json_text.delete("1.0", "end")
+        self.export_json_text.insert("1.0", content)
+
+    def _clear_export_file_buttons(self) -> None:
+        for button in self.export_file_buttons:
+            button.destroy()
+        self.export_file_buttons.clear()

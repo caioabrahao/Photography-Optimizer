@@ -16,6 +16,8 @@ Desktop GUI tool to batch-convert images to WebP and export EXIF metadata into a
 - Selected images list is displayed in the interface.
 - Progress bar + live text logs.
 - End-of-process compression statistics (before vs after size and compression rate).
+- Export Manager tab to inspect images in the `exported/` folder and view each image's corresponding `gallery-data.json` object.
+- Footer credit linked to Caio Abrahão's GitHub profile.
 
 ## Project structure
 - `src/main.py` — app entrypoint.
