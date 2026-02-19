@@ -10,6 +10,7 @@ from tkinter import filedialog, messagebox
 from typing import Any
 
 import customtkinter as ctk
+from PIL import Image
 
 from app.core.converter import BatchConverter, filter_supported_images
 from app.core.models import ConversionOptions
@@ -32,29 +33,67 @@ class MainWindow(ctk.CTk):
 
         self.export_records_by_file: dict[str, dict[str, Any]] = {}
         self.export_file_buttons: list[ctk.CTkButton] = []
+        self.export_button_by_name: dict[str, ctk.CTkButton] = {}
+        self.selected_export_image: str | None = None
+        self.selected_input_image: Path | None = None
+        self.input_file_buttons: list[ctk.CTkButton] = []
+        self.input_button_by_name: dict[str, ctk.CTkButton] = {}
+        self.input_thumbnail_image: ctk.CTkImage | None = None
+        self.export_thumbnail_image: ctk.CTkImage | None = None
 
         self._build_ui()
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        header = ctk.CTkFrame(self)
+        header.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 10))
+        header.grid_columnconfigure(0, weight=1)
+
+        self.header_title = ctk.CTkLabel(header, text="Photography Optimizer", font=ctk.CTkFont(size=26, weight="bold"))
+        self.header_title.grid(row=0, column=0, sticky="w", padx=14, pady=(12, 2))
+
+        self.header_subtitle = ctk.CTkLabel(
+            header,
+            text="Optimize your photos for the web and manage theyr EXIF metadata easily",
+        )
+        self.header_subtitle.grid(row=1, column=0, sticky="w", padx=14, pady=(0, 8))
+
+        self.header_version = ctk.CTkLabel(header, text="Version 1.0")
+        self.header_version.grid(row=0, column=1, sticky="e", padx=14, pady=(12, 2))
 
         self.tabs = ctk.CTkTabview(self)
-        self.tabs.grid(row=0, column=0, sticky="nsew", padx=18, pady=(18, 10))
+        self.tabs.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
+        self.tabs.grid_columnconfigure(0, weight=1)
 
         self.converter_tab = self.tabs.add("Converter")
         self.export_manager_tab = self.tabs.add("Export Manager")
 
-        self._build_converter_tab(self.converter_tab)
+        self.converter_tab.grid_columnconfigure(0, weight=1)
+        self.converter_tab.grid_rowconfigure(0, weight=1)
+        self.export_manager_tab.grid_columnconfigure(0, weight=1)
+        self.export_manager_tab.grid_rowconfigure(0, weight=1)
+
+        self.converter_scroll = ctk.CTkScrollableFrame(self.converter_tab)
+        self.converter_scroll.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+        self.converter_scroll.grid_columnconfigure(0, weight=1)
+
+        self._build_converter_tab(self.converter_scroll)
         self._build_export_manager_tab(self.export_manager_tab)
 
+        if hasattr(self.tabs, "_segmented_button"):
+            self.tabs._segmented_button.grid(sticky="ew", padx=0, pady=(0, 10))
+
         footer = ctk.CTkFrame(self)
-        footer.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 18))
+        footer.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 18))
         footer.grid_columnconfigure(0, weight=1)
 
         self.credit_label = ctk.CTkLabel(footer, text="Made by Caio Abrahão", cursor="hand2")
         self.credit_label.grid(row=0, column=0, sticky="e", padx=10, pady=8)
         self.credit_label.bind("<Button-1>", self._open_credit_link)
+
+        self._update_action_states()
 
     def _build_converter_tab(self, parent: ctk.CTkFrame) -> None:
         parent.grid_columnconfigure(0, weight=1)
@@ -158,13 +197,25 @@ class MainWindow(ctk.CTk):
 
         selected_frame = ctk.CTkFrame(parent)
         selected_frame.grid(row=2, column=0, sticky="nsew", padx=0, pady=(0, 10))
-        selected_frame.grid_columnconfigure(0, weight=1)
+        selected_frame.grid_columnconfigure((0, 1), weight=1)
         selected_frame.grid_rowconfigure(1, weight=1)
 
         ctk.CTkLabel(selected_frame, text="Selected images").grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
-        self.selected_images_text = ctk.CTkTextbox(selected_frame, height=120)
-        self.selected_images_text.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
-        self.selected_images_text.configure(state="disabled")
+
+        self.selected_images_scroll = ctk.CTkScrollableFrame(selected_frame, height=150)
+        self.selected_images_scroll.grid(row=1, column=0, sticky="nsew", padx=(12, 6), pady=(0, 12))
+        self.selected_images_scroll.grid_columnconfigure(0, weight=1)
+
+        preview_frame = ctk.CTkFrame(selected_frame)
+        preview_frame.grid(row=1, column=1, sticky="nsew", padx=(6, 12), pady=(0, 12))
+        preview_frame.grid_columnconfigure(0, weight=1)
+        preview_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(preview_frame, text="Thumbnail preview").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 6))
+        self.selected_preview_label = ctk.CTkLabel(preview_frame, text="No image selected")
+        self.selected_preview_label.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 6))
+        self.selected_preview_name = ctk.CTkLabel(preview_frame, text="")
+        self.selected_preview_name.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
 
         progress_frame = ctk.CTkFrame(parent)
         progress_frame.grid(row=3, column=0, sticky="ew", padx=0, pady=(0, 10))
@@ -212,6 +263,7 @@ class MainWindow(ctk.CTk):
             command=self._open_exported_directory,
         )
         self.open_exported_button.grid(row=0, column=1, sticky="e", padx=12, pady=(10, 8))
+        self.open_exported_button.configure(state="disabled")
 
         buttons = ctk.CTkFrame(controls)
         buttons.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 10))
@@ -239,11 +291,17 @@ class MainWindow(ctk.CTk):
         details_frame = ctk.CTkFrame(parent)
         details_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 0), pady=(0, 10))
         details_frame.grid_columnconfigure(0, weight=1)
-        details_frame.grid_rowconfigure(1, weight=1)
+        details_frame.grid_rowconfigure(4, weight=1)
 
-        ctk.CTkLabel(details_frame, text="JSON object").grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
+        ctk.CTkLabel(details_frame, text="Thumbnail preview").grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
+        self.export_preview_label = ctk.CTkLabel(details_frame, text="No image selected")
+        self.export_preview_label.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 6))
+        self.export_preview_name = ctk.CTkLabel(details_frame, text="")
+        self.export_preview_name.grid(row=2, column=0, sticky="w", padx=12, pady=(0, 8))
+
+        ctk.CTkLabel(details_frame, text="JSON object").grid(row=3, column=0, sticky="w", padx=12, pady=(0, 6))
         self.export_json_text = ctk.CTkTextbox(details_frame)
-        self.export_json_text.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self.export_json_text.grid(row=4, column=0, sticky="nsew", padx=12, pady=(0, 12))
         self.export_json_text.tag_config("json_key", foreground="#7aa2f7")
         self.export_json_text.tag_config("json_string", foreground="#9ece6a")
         self.export_json_text.tag_config("json_number", foreground="#e0af68")
@@ -275,6 +333,7 @@ class MainWindow(ctk.CTk):
         self.selected_files = filtered
         self.files_label.configure(text=f"Selected images: {len(filtered)}")
         self._refresh_selected_images_list()
+        self._update_action_states()
         self._log(f"Selected {len(filtered)} images.")
 
     def _pick_output_dir(self) -> None:
@@ -285,6 +344,7 @@ class MainWindow(ctk.CTk):
         self.output_dir = Path(selected)
         self._refresh_output_label()
         self._refresh_export_manager()
+        self._update_action_states()
         self._log(f"Output folder set to: {self.output_dir}")
 
     def _on_quality_change(self, value: float) -> None:
@@ -358,7 +418,7 @@ class MainWindow(ctk.CTk):
         )
 
         def finish() -> None:
-            self.start_button.configure(state="normal")
+            self._update_action_states()
             summary = (
                 f"Done. Converted: {result.succeeded}/{result.total}. "
                 f"Failed: {result.failed}. "
@@ -368,6 +428,7 @@ class MainWindow(ctk.CTk):
             )
             self._log(summary)
             self._refresh_export_manager()
+            self.tabs.set("Export Manager")
             messagebox.showinfo("Batch finished", summary)
 
         self.after(0, finish)
@@ -399,11 +460,30 @@ class MainWindow(ctk.CTk):
         self.output_label.configure(text=f"Output: {effective}")
 
     def _refresh_selected_images_list(self) -> None:
-        self.selected_images_text.configure(state="normal")
-        self.selected_images_text.delete("1.0", "end")
+        self._clear_input_file_buttons()
+
         for path in self.selected_files:
-            self.selected_images_text.insert("end", f"{path.name}\n")
-        self.selected_images_text.configure(state="disabled")
+            button = ctk.CTkButton(
+                self.selected_images_scroll,
+                text=f"  {path.name}",
+                anchor="w",
+                command=lambda p=path: self._select_input_image(p),
+            )
+            button.grid(sticky="ew", padx=0, pady=(0, 6))
+            self.input_file_buttons.append(button)
+            self.input_button_by_name[path.name] = button
+
+        if not self.selected_files:
+            self.selected_input_image = None
+            self.selected_preview_label.configure(image=None, text="No image selected")
+            self.selected_preview_name.configure(text="")
+            return
+
+        if self.selected_input_image not in self.selected_files:
+            self.selected_input_image = self.selected_files[0]
+
+        if self.selected_input_image is not None:
+            self._select_input_image(self.selected_input_image)
 
     def _parse_resize_values(self) -> tuple[int | None, int | None]:
         if not self.resize_enabled_var.get():
@@ -495,6 +575,7 @@ class MainWindow(ctk.CTk):
             self.manager_output_label.configure(text="Exported directory: not selected")
             self.manager_status_label.configure(text="Select an output folder to load exported files.")
             self._clear_export_file_buttons()
+            self.open_exported_button.configure(state="disabled")
             self._set_export_json_text("Select an output folder to inspect exported data.")
             return
 
@@ -504,8 +585,11 @@ class MainWindow(ctk.CTk):
         if not exported_dir.exists():
             self.manager_status_label.configure(text="Exported folder does not exist yet.")
             self._clear_export_file_buttons()
+            self.open_exported_button.configure(state="disabled")
             self._set_export_json_text("No exported files found yet.")
             return
+
+        self.open_exported_button.configure(state="normal")
 
         records = self._load_gallery_records(exported_dir)
         image_files = sorted(
@@ -520,12 +604,13 @@ class MainWindow(ctk.CTk):
         for image_name in image_files:
             button = ctk.CTkButton(
                 self.export_files_scroll,
-                text=image_name,
+                text=f"  {image_name}",
                 anchor="w",
-                command=lambda name=image_name: self._show_export_record(name),
+                command=lambda name=image_name: self._select_export_image(name),
             )
             button.grid(sticky="ew", padx=0, pady=(0, 6))
             self.export_file_buttons.append(button)
+            self.export_button_by_name[image_name] = button
 
         if not image_files:
             self.manager_status_label.configure(text="No exported images found.")
@@ -533,7 +618,12 @@ class MainWindow(ctk.CTk):
             return
 
         self.manager_status_label.configure(text=f"Loaded {len(image_files)} image(s) and {len(records)} JSON record(s).")
-        self._show_export_record(image_files[0])
+
+        if self.selected_export_image not in image_files:
+            self.selected_export_image = image_files[0]
+
+        if self.selected_export_image is not None:
+            self._select_export_image(self.selected_export_image)
 
     def _load_gallery_records(self, exported_dir: Path) -> dict[str, dict[str, Any]]:
         gallery_path = exported_dir / "gallery-data.json"
@@ -571,6 +661,19 @@ class MainWindow(ctk.CTk):
 
         pretty = json.dumps(payload, indent=2, ensure_ascii=False)
         self._set_export_json_text(pretty)
+
+    def _select_export_image(self, image_name: str) -> None:
+        self.selected_export_image = image_name
+        self._refresh_export_button_highlight()
+        self._show_export_record(image_name)
+        self._update_export_thumbnail(image_name)
+
+    def _refresh_export_button_highlight(self) -> None:
+        for name, button in self.export_button_by_name.items():
+            if name == self.selected_export_image:
+                button.configure(text=f"▶ {name}", font=ctk.CTkFont(weight="bold"))
+            else:
+                button.configure(text=f"  {name}", font=ctk.CTkFont(weight="normal"))
 
     def _set_export_json_text(self, content: str) -> None:
         self.export_json_text.delete("1.0", "end")
@@ -614,6 +717,10 @@ class MainWindow(ctk.CTk):
         for button in self.export_file_buttons:
             button.destroy()
         self.export_file_buttons.clear()
+        self.export_button_by_name.clear()
+        self.selected_export_image = None
+        self.export_preview_label.configure(image=None, text="No image selected")
+        self.export_preview_name.configure(text="")
 
     def _open_exported_directory(self) -> None:
         if self.output_dir is None:
@@ -629,3 +736,60 @@ class MainWindow(ctk.CTk):
             os.startfile(exported_dir)  # type: ignore[attr-defined]
         except Exception:
             webbrowser.open(exported_dir.resolve().as_uri())
+
+    def _update_action_states(self) -> None:
+        can_convert = bool(self.selected_files) and self.output_dir is not None
+        self.start_button.configure(state="normal" if can_convert else "disabled")
+
+    def _clear_input_file_buttons(self) -> None:
+        for button in self.input_file_buttons:
+            button.destroy()
+        self.input_file_buttons.clear()
+        self.input_button_by_name.clear()
+
+    def _select_input_image(self, image_path: Path) -> None:
+        self.selected_input_image = image_path
+        self._refresh_input_button_highlight()
+        self._update_input_thumbnail(image_path)
+
+    def _refresh_input_button_highlight(self) -> None:
+        selected_name = self.selected_input_image.name if self.selected_input_image is not None else None
+        for name, button in self.input_button_by_name.items():
+            if name == selected_name:
+                button.configure(text=f"▶ {name}", font=ctk.CTkFont(weight="bold"))
+            else:
+                button.configure(text=f"  {name}", font=ctk.CTkFont(weight="normal"))
+
+    def _update_input_thumbnail(self, image_path: Path) -> None:
+        self._set_thumbnail(self.selected_preview_label, self.selected_preview_name, image_path, "input")
+
+    def _update_export_thumbnail(self, image_name: str) -> None:
+        if self.output_dir is None:
+            return
+
+        exported_dir = resolve_effective_output_dir(self.output_dir)
+        image_path = exported_dir / image_name
+        self._set_thumbnail(self.export_preview_label, self.export_preview_name, image_path, "export")
+
+    def _set_thumbnail(self, label: ctk.CTkLabel, name_label: ctk.CTkLabel, image_path: Path, target: str) -> None:
+        if not image_path.exists():
+            label.configure(image=None, text="Preview unavailable")
+            name_label.configure(text=image_path.name)
+            return
+
+        try:
+            with Image.open(image_path) as image:
+                preview = image.copy()
+                preview.thumbnail((360, 220), Image.Resampling.LANCZOS)
+
+            tk_image = ctk.CTkImage(light_image=preview, dark_image=preview, size=preview.size)
+            if target == "input":
+                self.input_thumbnail_image = tk_image
+            else:
+                self.export_thumbnail_image = tk_image
+
+            label.configure(image=tk_image, text="")
+            name_label.configure(text=image_path.name)
+        except Exception:
+            label.configure(image=None, text="Preview unavailable")
+            name_label.configure(text=image_path.name)

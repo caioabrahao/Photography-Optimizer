@@ -3,6 +3,7 @@
 Desktop GUI tool to batch-convert images to WebP and export EXIF metadata into a `gallery-data.json` file.
 
 ## Features (foundation)
+- Header section with product title, subtitle, and version (`1.0`).
 - Modern desktop GUI built with CustomTkinter.
 - Batch convert images (`jpg`, `jpeg`, `png`, `tiff`, `bmp`, `webp`) to WebP.
 - Adjustable WebP quality slider.
@@ -13,13 +14,17 @@ Desktop GUI tool to batch-convert images to WebP and export EXIF metadata into a
 - Optional API base URL field to generate per-image links in JSON.
 - Pre-run output validation warns when `gallery-data.json` already exists or duplicate output image names are detected.
 - Optional image resizing in a collapsible settings section, with preserve-aspect-ratio field locking.
-- Selected images list is displayed in the interface.
+- Selected images list is displayed in the interface with clickable per-image thumbnail preview.
 - Progress bar + live text logs.
 - End-of-process compression statistics (before vs after size and compression rate).
 - Export Manager tab to inspect images in the `exported/` folder and view each image's corresponding `gallery-data.json` object.
 - JSON viewer highlighting in Export Manager for easier metadata inspection.
+- Export Manager keeps the selected image visibly highlighted.
+- Export Manager includes thumbnail preview for the currently selected exported image.
 - Open Folder button in Export Manager to jump to the exported directory in file explorer.
 - Footer credit linked to Caio Abrahão's GitHub profile.
+- Scrollable tab content for smoother navigation on smaller windows.
+- Tab selector stretches across available width, and Export Manager JSON viewer expands vertically with available space.
 
 ## Project structure
 - `src/main.py` — app entrypoint.
