@@ -27,6 +27,8 @@ class BatchConverter:
         total = len(options.input_files)
         succeeded = 0
         failed = 0
+        input_total_bytes = 0
+        output_total_bytes = 0
         records: list[ConvertedImageRecord] = []
 
         for index, source_path in enumerate(options.input_files, start=1):
@@ -37,18 +39,18 @@ class BatchConverter:
                 output_name = self._build_output_name(source_path, options, index)
                 output_path = options.output_dir / output_name
 
-                if not options.overwrite:
-                    output_path = self._make_unique(output_path)
-                    output_name = output_path.name
-
                 with Image.open(source_path) as image:
                     metadata = extract_exif_data(image)
-                    image.save(
+                    image_to_save = self._resize_if_enabled(image, options)
+                    image_to_save.save(
                         output_path,
                         format="WEBP",
                         quality=options.quality,
                         method=6,
                     )
+
+                input_total_bytes += source_path.stat().st_size
+                output_total_bytes += output_path.stat().st_size
 
                 records.append(
                     ConvertedImageRecord(
@@ -79,6 +81,8 @@ class BatchConverter:
             succeeded=succeeded,
             failed=failed,
             gallery_json_path=gallery_json_path,
+            input_total_bytes=input_total_bytes,
+            output_total_bytes=output_total_bytes,
         )
 
     def _build_output_name(self, source_path: Path, options: ConversionOptions, index: int) -> str:
@@ -87,17 +91,32 @@ class BatchConverter:
             return f"{base_name}-{index}.webp"
         return f"{source_path.stem}.webp"
 
-    def _make_unique(self, output_path: Path) -> Path:
-        if not output_path.exists():
-            return output_path
+    def get_expected_output_names(self, options: ConversionOptions) -> list[str]:
+        names: list[str] = []
+        for index, source_path in enumerate(options.input_files, start=1):
+            names.append(self._build_output_name(source_path, options, index))
+        return names
 
-        counter = 1
-        while True:
-            candidate = output_path.with_name(f"{output_path.stem}-{counter}{output_path.suffix}")
-            if not candidate.exists():
-                return candidate
-            counter += 1
+    def _resize_if_enabled(self, image: Image.Image, options: ConversionOptions) -> Image.Image:
+        if not options.resize_enabled:
+            return image
 
+        target_width = options.resize_width
+        target_height = options.resize_height
+
+        if target_width is None and target_height is None:
+            return image
+
+        if options.preserve_aspect_ratio:
+            resized = image.copy()
+            width = target_width if target_width is not None else image.width
+            height = target_height if target_height is not None else image.height
+            resized.thumbnail((max(1, width), max(1, height)), Image.Resampling.LANCZOS)
+            return resized
+
+        width = target_width if target_width is not None else image.width
+        height = target_height if target_height is not None else image.height
+        return image.resize((max(1, width), max(1, height)), Image.Resampling.LANCZOS)
 
 def filter_supported_images(paths: list[Path]) -> list[Path]:
     return [path for path in paths if path.suffix.lower() in SUPPORTED_EXTENSIONS]
