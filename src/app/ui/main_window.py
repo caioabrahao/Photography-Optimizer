@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import threading
 import webbrowser
 from pathlib import Path
@@ -203,6 +205,14 @@ class MainWindow(ctk.CTk):
         self.manager_output_label = ctk.CTkLabel(controls, text="Exported directory: not selected")
         self.manager_output_label.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 8))
 
+        self.open_exported_button = ctk.CTkButton(
+            controls,
+            text="Open Folder",
+            width=120,
+            command=self._open_exported_directory,
+        )
+        self.open_exported_button.grid(row=0, column=1, sticky="e", padx=12, pady=(10, 8))
+
         buttons = ctk.CTkFrame(controls)
         buttons.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 10))
         buttons.grid_columnconfigure((0, 1), weight=1)
@@ -234,6 +244,12 @@ class MainWindow(ctk.CTk):
         ctk.CTkLabel(details_frame, text="JSON object").grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
         self.export_json_text = ctk.CTkTextbox(details_frame)
         self.export_json_text.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self.export_json_text.tag_config("json_key", foreground="#7aa2f7")
+        self.export_json_text.tag_config("json_string", foreground="#9ece6a")
+        self.export_json_text.tag_config("json_number", foreground="#e0af68")
+        self.export_json_text.tag_config("json_boolean", foreground="#bb9af7")
+        self.export_json_text.tag_config("json_null", foreground="#f7768e")
+        self.export_json_text.tag_config("json_brace", foreground="#c0caf5")
 
         self._set_export_json_text("Select an output folder to inspect exported data.")
 
@@ -559,8 +575,57 @@ class MainWindow(ctk.CTk):
     def _set_export_json_text(self, content: str) -> None:
         self.export_json_text.delete("1.0", "end")
         self.export_json_text.insert("1.0", content)
+        self._apply_json_highlighting(content)
+
+    def _apply_json_highlighting(self, content: str) -> None:
+        for tag in ("json_key", "json_string", "json_number", "json_boolean", "json_null", "json_brace"):
+            self.export_json_text.tag_remove(tag, "1.0", "end")
+
+        if not content.strip():
+            return
+
+        for match in re.finditer(r'"[^"\\]*(?:\\.[^"\\]*)*"\s*:', content):
+            self._tag_span("json_key", match.start(), match.end() - 1)
+
+        for match in re.finditer(r':\s*"[^"\\]*(?:\\.[^"\\]*)*"', content):
+            value_start = match.group(0).find('"')
+            if value_start >= 0:
+                start = match.start() + value_start
+                self._tag_span("json_string", start, match.end())
+
+        for match in re.finditer(r'(?<![\w])[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?(?![\w])', content):
+            self._tag_span("json_number", match.start(), match.end())
+
+        for match in re.finditer(r'(?<![\w])(true|false)(?![\w])', content):
+            self._tag_span("json_boolean", match.start(), match.end())
+
+        for match in re.finditer(r'(?<![\w])null(?![\w])', content):
+            self._tag_span("json_null", match.start(), match.end())
+
+        for match in re.finditer(r'[\{\}\[\]]', content):
+            self._tag_span("json_brace", match.start(), match.end())
+
+    def _tag_span(self, tag: str, start_offset: int, end_offset: int) -> None:
+        start_index = f"1.0+{start_offset}c"
+        end_index = f"1.0+{end_offset}c"
+        self.export_json_text.tag_add(tag, start_index, end_index)
 
     def _clear_export_file_buttons(self) -> None:
         for button in self.export_file_buttons:
             button.destroy()
         self.export_file_buttons.clear()
+
+    def _open_exported_directory(self) -> None:
+        if self.output_dir is None:
+            messagebox.showinfo("Output folder not set", "Select an output folder first.")
+            return
+
+        exported_dir = resolve_effective_output_dir(self.output_dir)
+        if not exported_dir.exists():
+            messagebox.showinfo("Exported folder not found", "The exported folder does not exist yet.")
+            return
+
+        try:
+            os.startfile(exported_dir)  # type: ignore[attr-defined]
+        except Exception:
+            webbrowser.open(exported_dir.resolve().as_uri())
